@@ -17,7 +17,7 @@
 #define BUFSIZE 1024
 #define IPSIZE 46
 #define HTTP_PORT 80
-#define HTTP_SUCCESS 301
+#define HTTP_SUCCESS 200
 //test
 
 struct myargs {
