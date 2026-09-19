@@ -11,11 +11,13 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 
 #define BUFSIZE 1024
 #define IPSIZE 46
 #define HTTP_PORT 80
+//test
 
 struct myargs {
     char* url;
@@ -205,12 +207,38 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
         return head;
     }
 
-void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
+ArrayListBuf *getResponseStruct(int fd)
 {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if(fd == -1)
+    ArrayListBuf response;
+    ArrayListBuf_init(&response);
+    char recv_buffer[512];
+    int responseNumber;
+
+    while((responseNumber = (recv(fd, recv_buffer, 200, 0))) != 0)
     {
-        fprintf(stderr, "Socket creation failed: %d", fd);
+        printf("%s", recv_buffer);
+        //ArrayListBuf_push(&response, recv_buffer, 200);
+        memset(recv_buffer, 0, strlen(recv_buffer));
+
+        if(responseNumber < 0)
+        {
+            fprintf(stderr, "Error while parsing response");
+            exit(0);
+        }
+    }
+
+    ArrayListBuf *responsePointer = &response;
+
+    return responsePointer;
+}
+
+
+ArrayListBuf *inititateTCP(struct IpNode* ipList, struct myargs domainLink)
+{
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sockfd == -1)
+    {
+        fprintf(stderr, "Socket creation failed: %d", sockfd);
         exit(0);
     }
     bool connected = false;
@@ -229,7 +257,7 @@ void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
         }
         
         int status;
-        if((status = connect(fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr))) < 0)
+        if((status = connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr))) < 0)
         {
             printf("\n Address %s connection failed, trying next ip4 adress", ipList->ipAddr);
             ipList = ipList->next;
@@ -252,7 +280,7 @@ void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
 
         while(total_sent < msgLen)
         {
-             ssize_t msgSent_size = send(fd, &requestBuffer[total_sent], msgLen - total_sent, 0);
+             ssize_t msgSent_size = send(sockfd, &requestBuffer[total_sent], msgLen - total_sent, 0);
              if(msgSent_size < 0)
              {
                 if (errno == EINTR) continue; //interrupt signal over socket, wait
@@ -263,12 +291,12 @@ void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
         }
         fprintf(stdout, "Success");
 
-
-
-        close(fd);
-
+        ArrayListBuf *responseStruct = getResponseStruct(sockfd);
+        close(sockfd);
+        return responseStruct; 
     }
-    
+
+
 
 
 
@@ -280,6 +308,9 @@ int main(int argc, char** argv) {
     struct IpNode* ip6_list = getIpAdress(args.domain, AF_INET6);
 
 
-    inititateTCP(ip4_list, args);
+    ArrayListBuf *result = inititateTCP(ip4_list, args);
+    //printf("%s", result->buff);
+
+    return 0;
     
 }
