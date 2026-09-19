@@ -326,10 +326,13 @@ int parseResponseStruct(ArrayListBuf *responseStruct)
 
     if(responseCode == HTTP_SUCCESS)
     {
-        FILE *binFile = fopen(nameBuffer, "w+");
+        FILE *binFile = fopen(nameBuffer, "wb");
         fwrite(parsePointer, sizeof(parsePointer), strlen(parsePointer), binFile);
         fclose(binFile);
     }
+    
+    free(parseResponse);
+    
     return responseCode;
 }
 
@@ -350,7 +353,7 @@ int main(int argc, char** argv) {
     }
     else
     {
-        printf("HTTP request not OK. HTTP Response code: %d", result);
+        printf("HTTP request not OK. HTTP Response code: %d\n", result);
     }
 
     return 0;
