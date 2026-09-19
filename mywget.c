@@ -5,8 +5,14 @@
 #include <netdb.h>
 #include <errno.h>
 #include "arraylist.h"
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/types.h>
+#include <netdb.h>
+#include <arpa/inet.h>
 
 #define BUFSIZE 1024
+#define IPSIZE 46
 
 struct myargs {
     char* url;
@@ -16,6 +22,13 @@ struct myargs {
     char* target;
     struct timeval timeout; // 10 (second) by default
 };
+
+struct IpNode
+{
+    char ipAddr[IPSIZE];
+    struct IpNode *next;
+};
+
 
 /**
  * @brief Separate a URL out into the domain part and the path part
@@ -148,8 +161,76 @@ struct myargs parseArgs(int argc, char** argv) {
 }
 
 
+
+struct IpNode* getIpAdress(char* domainName, int ai_family)
+{
+    struct addrinfo hints;
+    struct addrinfo* nodes;
+    struct IpNode* head = NULL;
+
+    head = (struct IpNode*) malloc(sizeof(struct IpNode));
+
+    memset(&hints, 0, sizeof(struct  addrinfo));
+  
+    hints.ai_family = AF_UNSPEC; //use either ip4 or ip6
+    hints.ai_socktype = SOCK_STREAM;
+    int addr_ret = getaddrinfo(domainName, "80", &hints, &nodes);
+    if(addr_ret != 0)
+    {
+        fprintf(stderr, "Cannot get addrinfo, error code: %d", addr_ret);
+    }
+
+
+    while (nodes != NULL)
+    {
+        char ip[IPSIZE];
+        ip[0] = 0;
+
+        if (nodes->ai_family == AF_INET && ai_family == AF_INET)
+        {
+            struct sockaddr_in* ipdata = (struct sockaddr_in*)nodes->ai_addr;
+            inet_ntop(nodes->ai_family, &ipdata->sin_addr, ip, IPSIZE);
+        }
+        else if (nodes->ai_family == AF_INET6 && ai_family == AF_INET6)
+        {
+            struct sockaddr_in6* ipdata = (struct sockaddr_in6*)  nodes->ai_addr;
+            inet_ntop(nodes->ai_family, &ipdata->sin6_addr, ip, IPSIZE);
+        }
+
+        if(ip[0] != 0){
+            struct IpNode* newNode = (struct IpNode*) malloc(sizeof(struct IpNode));
+            strcpy(newNode->ipAddr, ip);
+            newNode->next = head;
+            head = newNode;
+        }
+        nodes = nodes->ai_next;
+    }
+        freeaddrinfo(nodes);
+        return head;
+    }
+
+
 int main(int argc, char** argv) {
     struct myargs args = parseArgs(argc, argv);
+
+    //create socket
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
     
-    // TODO: Fill this in.  You may want to add some helper methods for better organization
+    char name[] = "www.drudgereport.com";
+
+    struct IpNode* ip4_list = getIpAdress(args.domain, AF_INET);
+    struct IpNode* ip6_list = getIpAdress(args.domain, AF_INET6);
+
+    while(ip4_list->next != NULL)
+    {
+        printf("%s\n", ip4_list->ipAddr);
+        ip4_list = ip4_list->next;
+    }
+
+    while(ip6_list->next != NULL)
+    {
+        printf("%s\n", ip6_list->ipAddr);
+        ip6_list = ip6_list->next;
+    }
+    
 }
