@@ -10,7 +10,8 @@
 #include <sys/types.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include <stdbool.h>>
+#include <stdbool.h>
+
 
 #define BUFSIZE 1024
 #define IPSIZE 46
@@ -171,9 +172,7 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
     struct IpNode* head = NULL;
 
     head = (struct IpNode*) malloc(sizeof(struct IpNode));
-
     memset(&hints, 0, sizeof(struct  addrinfo));
-  
     hints.ai_family = AF_UNSPEC; //use either ip4 or ip6
     hints.ai_socktype = SOCK_STREAM;
     int addr_ret = getaddrinfo(domainName, "80", &hints, &nodes);
@@ -218,6 +217,9 @@ void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
     struct sockaddr_in serv_addr; //ip4
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(HTTP_PORT);
+
+    /*goes through link list parsed from get addr, returns error if no connection
+    initiated.*/
     while(ipList->next != NULL && connected == false)
     {
         if (inet_pton(AF_INET, ipList->ipAddr, &serv_addr.sin_addr) <= 0)
@@ -236,6 +238,34 @@ void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
     }
     if(connected != true){fprintf(stderr, "Connecting socket failed"); exit(0);}
 
+        char requestBuffer[200];
+        int req = snprintf(requestBuffer, "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n", domainLink.path, domainLink.domain);
+        if(req < 0)
+        {
+            fprintf(stderr, "Write failed, buffer is too long");
+        }
+
+        int msgLen = strlen(requestBuffer);
+
+        size_t total_sent = 0; //using unsigned interger 
+       
+
+        while(total_sent < msgLen)
+        {
+             ssize_t msgSent_size = send(fd, &requestBuffer[total_sent], msgLen - total_sent, 0);
+             if(msgSent_size < 0)
+             {
+                if (errno == EINTR) continue; //interrupt signal over socket, wait
+                fprintf(stderr, "Failed to send GET request to msg");
+             }
+             total_sent += msgSent_size;
+
+        }
+        fprintf(stdout, "Success");
+
+
+
+        close(fd);
 
     }
     
@@ -245,12 +275,7 @@ void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
 
 int main(int argc, char** argv) {
     struct myargs args = parseArgs(argc, argv);
-
     //create socket
-   
-    
-    char name[] = "www.drudgereport.com";
-
     struct IpNode* ip4_list = getIpAdress(args.domain, AF_INET);
     struct IpNode* ip6_list = getIpAdress(args.domain, AF_INET6);
 
