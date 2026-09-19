@@ -10,9 +10,11 @@
 #include <sys/types.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <stdbool.h>>
 
 #define BUFSIZE 1024
 #define IPSIZE 46
+#define HTTP_PORT 80
 
 struct myargs {
     char* url;
@@ -186,15 +188,10 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
         char ip[IPSIZE];
         ip[0] = 0;
 
-        if (nodes->ai_family == AF_INET && ai_family == AF_INET)
+        if (nodes->ai_family == AF_INET)
         {
             struct sockaddr_in* ipdata = (struct sockaddr_in*)nodes->ai_addr;
             inet_ntop(nodes->ai_family, &ipdata->sin_addr, ip, IPSIZE);
-        }
-        else if (nodes->ai_family == AF_INET6 && ai_family == AF_INET6)
-        {
-            struct sockaddr_in6* ipdata = (struct sockaddr_in6*)  nodes->ai_addr;
-            inet_ntop(nodes->ai_family, &ipdata->sin6_addr, ip, IPSIZE);
         }
 
         if(ip[0] != 0){
@@ -209,28 +206,55 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
         return head;
     }
 
+void inititateTCP(struct IpNode* ipList, struct myargs domainLink)
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if(fd == -1)
+    {
+        fprintf(stderr, "Socket creation failed: %d", fd);
+        exit(0);
+    }
+    bool connected = false;
+    struct sockaddr_in serv_addr; //ip4
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(HTTP_PORT);
+    while(ipList->next != NULL && connected == false)
+    {
+        if (inet_pton(AF_INET, ipList->ipAddr, &serv_addr.sin_addr) <= 0)
+        {
+            fprintf(stderr, "\n Invalid adress");
+            exit(0);
+        }
+        
+        int status;
+        if((status = connect(fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr))) < 0)
+        {
+            printf("\n Address %s connection failed, trying next ip4 adress", ipList->ipAddr);
+            ipList = ipList->next;
+        }
+        else {connected = true; printf("connected to: %s", ipList->ipAddr);}
+    }
+    if(connected != true){fprintf(stderr, "Connecting socket failed"); exit(0);}
+
+
+    }
+    
+
+
+
 
 int main(int argc, char** argv) {
     struct myargs args = parseArgs(argc, argv);
 
     //create socket
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
+   
     
     char name[] = "www.drudgereport.com";
 
     struct IpNode* ip4_list = getIpAdress(args.domain, AF_INET);
     struct IpNode* ip6_list = getIpAdress(args.domain, AF_INET6);
 
-    while(ip4_list->next != NULL)
-    {
-        printf("%s\n", ip4_list->ipAddr);
-        ip4_list = ip4_list->next;
-    }
 
-    while(ip6_list->next != NULL)
-    {
-        printf("%s\n", ip6_list->ipAddr);
-        ip6_list = ip6_list->next;
-    }
+    inititateTCP(ip4_list, args);
     
 }
