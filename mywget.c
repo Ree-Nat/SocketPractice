@@ -17,6 +17,7 @@
 #define BUFSIZE 1024
 #define IPSIZE 46
 #define HTTP_PORT 80
+#define HTTP_SUCCESS 301
 //test
 
 struct myargs {
@@ -33,6 +34,10 @@ struct IpNode
     char ipAddr[IPSIZE];
     struct IpNode *next;
 };
+
+struct myargs args; //global args
+
+int parseResponseStruct(ArrayListBuf *responseStruct);
 
 
 /**
@@ -214,17 +219,15 @@ ArrayListBuf *getResponseStruct(int fd)
     char recv_buffer[512];
     int responseNumber;
 
-    while((responseNumber = (recv(fd, recv_buffer, 200, 0))) != 0)
+    while((responseNumber = (recv(fd, recv_buffer, sizeof(recv_buffer), 0))) != 0)
     {
-        printf("%s", recv_buffer);
-        //ArrayListBuf_push(&response, recv_buffer, 200);
-        memset(recv_buffer, 0, strlen(recv_buffer));
-
         if(responseNumber < 0)
         {
+            if (errno == EINTR) continue;
             fprintf(stderr, "Error while parsing response");
             exit(0);
         }
+        ArrayListBuf_push(&response, recv_buffer, responseNumber);
     }
 
     ArrayListBuf *responsePointer = &response;
@@ -233,7 +236,7 @@ ArrayListBuf *getResponseStruct(int fd)
 }
 
 
-ArrayListBuf *inititateTCP(struct IpNode* ipList, struct myargs domainLink)
+int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
 {
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if(sockfd == -1)
@@ -267,7 +270,7 @@ ArrayListBuf *inititateTCP(struct IpNode* ipList, struct myargs domainLink)
     if(connected != true){fprintf(stderr, "Connecting socket failed"); exit(0);}
 
         char requestBuffer[200];
-        int req = snprintf(requestBuffer, "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n", domainLink.path, domainLink.domain);
+        int req = snprintf(requestBuffer, sizeof(requestBuffer), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", domainLink.path, domainLink.domain);
         if(req < 0)
         {
             fprintf(stderr, "Write failed, buffer is too long");
@@ -289,27 +292,66 @@ ArrayListBuf *inititateTCP(struct IpNode* ipList, struct myargs domainLink)
              total_sent += msgSent_size;
 
         }
-        fprintf(stdout, "Success");
-
+        fprintf(stdout, "Connection Successful, now intepreting http get:\n");
         ArrayListBuf *responseStruct = getResponseStruct(sockfd);
+        int code = parseResponseStruct(responseStruct);
         close(sockfd);
-        return responseStruct; 
+        return code; 
     }
 
+int parseResponseStruct(ArrayListBuf *responseStruct)
+{
+    char *responseBuff = responseStruct->buff;
+    int responseLength = responseStruct->N;
+    int responseCode = 0;
+    char *charPointer;
 
+    //Get rid of leftover values from arraylist buffer
+    char *parseResponse = malloc(sizeof(char) * responseStruct->N + 1);
+    if(parseResponse == NULL){fprintf(stderr, "Error when malloc parse response");exit(0);}
+    strncpy(parseResponse, responseBuff, responseStruct->N);
+    parseResponse[responseLength] = '\0';
+
+    char *parsePointer = parseResponse;
+    sscanf(parsePointer, "HTTP/%*d.%*d %3d", &responseCode);
+    parsePointer = strstr(parsePointer, "\r\n\r\n"); //go down to body
+    parsePointer += 4; //go down a line
+
+    char nameBuffer[50];
+    int res = sprintf(nameBuffer, "%s/http_output.bin", args.target);
+    if(res < 0)
+    {
+        fprintf(stderr, "path name to long");
+    }
+
+    if(responseCode == HTTP_SUCCESS)
+    {
+        FILE *binFile = fopen(nameBuffer, "w+");
+        fwrite(parsePointer, sizeof(parsePointer), strlen(parsePointer), binFile);
+        fclose(binFile);
+    }
+    return responseCode;
+}
 
 
 
 
 int main(int argc, char** argv) {
-    struct myargs args = parseArgs(argc, argv);
+    args = parseArgs(argc, argv);
     //create socket
     struct IpNode* ip4_list = getIpAdress(args.domain, AF_INET);
-    struct IpNode* ip6_list = getIpAdress(args.domain, AF_INET6);
+    
+    int result = inititateTCP(ip4_list, args);
 
-
-    ArrayListBuf *result = inititateTCP(ip4_list, args);
-    //printf("%s", result->buff);
+    if(result == HTTP_SUCCESS)
+    {
+        printf("\n Connection and Parsing successful, now outputing file thi %s", args.path);
+        
+    }
+    else
+    {
+        printf("HTTP request not OK. HTTP Response code: %d", result);
+    }
 
     return 0;
     
