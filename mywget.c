@@ -15,7 +15,7 @@
 
 
 #define BUFSIZE 1024
-#define IPSIZE 46
+#define IPSIZE 80
 #define HTTP_PORT 80
 #define HTTP_SUCCESS 301
 //test
@@ -38,6 +38,7 @@ struct IpNode
 struct myargs args; //global args
 
 int parseResponseStruct(ArrayListBuf *responseStruct);
+void freeIpList(struct IpNode *head);
 
 
 /**
@@ -175,11 +176,11 @@ struct myargs parseArgs(int argc, char** argv) {
 struct IpNode* getIpAdress(char* domainName, int ai_family)
 {
     struct addrinfo hints;
-    struct addrinfo* nodes;
+    struct addrinfo* nodes = NULL, *cur;
     struct IpNode* head = NULL;
-
-
     head = (struct IpNode*) malloc(sizeof(struct IpNode));
+
+
     memset(&hints, 0, sizeof(struct  addrinfo));
     hints.ai_family = AF_UNSPEC; //use either ip4 or ip6
     hints.ai_socktype = SOCK_STREAM;
@@ -189,25 +190,22 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
         fprintf(stderr, "Cannot get addrinfo, error code: %d", addr_ret);
     }
 
-
-    while (nodes != NULL)
+    cur = nodes;
+    while (cur != NULL)
     {
-        char ip[IPSIZE];
-        ip[0] = 0;
-
         if (nodes->ai_family == AF_INET)
         {
-            struct sockaddr_in* ipdata = (struct sockaddr_in*)nodes->ai_addr;
-            inet_ntop(nodes->ai_family, &ipdata->sin_addr, ip, IPSIZE);
-        }
-
-        if(ip[0] != 0){
             struct IpNode* newNode = (struct IpNode*) malloc(sizeof(struct IpNode));
-            strcpy(newNode->ipAddr, ip);
+            struct sockaddr_in* ipdata = (struct sockaddr_in*)nodes->ai_addr;
+            if((inet_ntop(nodes->ai_family, &ipdata->sin_addr, newNode->ipAddr, IPSIZE)) == NULL)
+            {
+                fprintf(stderr, "\nError when retrieving IP from domain\n");
+            }
+            
             newNode->next = head;
             head = newNode;
         }
-        nodes = nodes->ai_next;
+        cur = cur->ai_next;
     }
         freeaddrinfo(nodes);
         return head;
@@ -216,6 +214,7 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
 ArrayListBuf *getResponseStruct(int fd)
 {
     ArrayListBuf *responseStruct;
+    responseStruct = malloc(sizeof(ArrayListBuf));
     ArrayListBuf_init(responseStruct);
     char recv_buffer[512];
     int responseNumber;
@@ -234,6 +233,16 @@ ArrayListBuf *getResponseStruct(int fd)
     return responseStruct;
 }
 
+void freeIpList(struct IpNode *head)
+{
+    while(head != NULL)
+    {
+        struct IpNode* next = head->next;
+        free(head);
+        head = next;
+    }
+}
+
 
 int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
 {
@@ -250,7 +259,7 @@ int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
 
     /*goes through link list parsed from get addr, returns error if no connection
     initiated.*/
-    struct ipNode* head = ipList;
+    struct IpNode* head = ipList;
     while(ipList->next != NULL && connected == false)
     {
         if (inet_pton(AF_INET, ipList->ipAddr, &serv_addr.sin_addr) <= 0)
@@ -269,7 +278,7 @@ int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
     }
     if(connected != true){fprintf(stderr, "Connecting socket failed"); exit(0);}
 
-        free(head);
+        freeIpList(head);
 
         char requestBuffer[200];
         int req = snprintf(requestBuffer, sizeof(requestBuffer), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", domainLink.path, domainLink.domain);
@@ -297,7 +306,8 @@ int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
         fprintf(stdout, "Connection Successful, now intepreting http get:\n");
         ArrayListBuf *responseStruct = getResponseStruct(sockfd);
         int code = parseResponseStruct(responseStruct);
-        ArrayListBuf_free(responseStruct);
+        ArrayListBuf_free(responseStruct); //frees buffer
+        free(responseStruct); //frees response struct
         close(sockfd);
         return code; 
     }
@@ -307,7 +317,6 @@ int parseResponseStruct(ArrayListBuf *responseStruct)
     char *responseBuff = responseStruct->buff;
     int responseLength = responseStruct->N;
     int responseCode = 0;
-    char *charPointer;
 
     //Get rid of leftover values from arraylist buffer
     char *parseResponse = malloc(sizeof(char) * responseStruct->N + 1);
@@ -315,10 +324,10 @@ int parseResponseStruct(ArrayListBuf *responseStruct)
     strncpy(parseResponse, responseBuff, responseStruct->N);
     parseResponse[responseLength] = '\0';
 
-    char *parsePointer = parseResponse;
-    sscanf(parsePointer, "HTTP/%*d.%*d %3d", &responseCode);
-    parsePointer = strstr(parsePointer, "\r\n\r\n"); //go down to body
-    parsePointer += 4; //go down a line
+    char *body = parseResponse;
+    sscanf(body, "HTTP/%*d.%*d %3d", &responseCode);
+    body = strstr(body, "\r\n\r\n"); //go down to body
+    body += 4; //go down a line
 
     char nameBuffer[50];
     int res = sprintf(nameBuffer, "%s/http_output.bin", args.target);
@@ -330,7 +339,8 @@ int parseResponseStruct(ArrayListBuf *responseStruct)
     if(responseCode == HTTP_SUCCESS)
     {
         FILE *binFile = fopen(nameBuffer, "wb");
-        fwrite(parsePointer, sizeof(parsePointer), strlen(parsePointer), binFile);
+        ssize_t body_length = responseStruct->N - (body - parseResponse);
+        fwrite(body, 1, body_length, binFile);
         fclose(binFile);
     }
     
@@ -351,7 +361,7 @@ int main(int argc, char** argv) {
 
     if(result == HTTP_SUCCESS)
     {
-        printf("\n Connection and Parsing successful, now outputing file thi %s", args.path);
+        printf("\n Connection and Parsing successful, now outputing file at: %s", args.path);
         
     }
     else
