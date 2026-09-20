@@ -178,7 +178,7 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
     struct addrinfo hints;
     struct addrinfo* nodes = NULL, *cur;
     struct IpNode* head = NULL;
-    head = (struct IpNode*) malloc(sizeof(struct IpNode));
+    //head = (struct IpNode*) malloc(sizeof(struct IpNode));
 
 
     memset(&hints, 0, sizeof(struct  addrinfo));
