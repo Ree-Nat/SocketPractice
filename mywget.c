@@ -17,7 +17,7 @@
 #define BUFSIZE 1024
 #define IPSIZE 46
 #define HTTP_PORT 80
-#define HTTP_SUCCESS 200
+#define HTTP_SUCCESS 301
 //test
 
 struct myargs {
@@ -178,6 +178,7 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
     struct addrinfo* nodes;
     struct IpNode* head = NULL;
 
+
     head = (struct IpNode*) malloc(sizeof(struct IpNode));
     memset(&hints, 0, sizeof(struct  addrinfo));
     hints.ai_family = AF_UNSPEC; //use either ip4 or ip6
@@ -214,8 +215,8 @@ struct IpNode* getIpAdress(char* domainName, int ai_family)
 
 ArrayListBuf *getResponseStruct(int fd)
 {
-    ArrayListBuf response;
-    ArrayListBuf_init(&response);
+    ArrayListBuf *responseStruct;
+    ArrayListBuf_init(responseStruct);
     char recv_buffer[512];
     int responseNumber;
 
@@ -227,12 +228,10 @@ ArrayListBuf *getResponseStruct(int fd)
             fprintf(stderr, "Error while parsing response");
             exit(0);
         }
-        ArrayListBuf_push(&response, recv_buffer, responseNumber);
+        ArrayListBuf_push(responseStruct, recv_buffer, responseNumber);
     }
 
-    ArrayListBuf *responsePointer = &response;
-
-    return responsePointer;
+    return responseStruct;
 }
 
 
@@ -251,6 +250,7 @@ int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
 
     /*goes through link list parsed from get addr, returns error if no connection
     initiated.*/
+    struct ipNode* head = ipList;
     while(ipList->next != NULL && connected == false)
     {
         if (inet_pton(AF_INET, ipList->ipAddr, &serv_addr.sin_addr) <= 0)
@@ -268,6 +268,8 @@ int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
         else {connected = true; printf("connected to: %s", ipList->ipAddr);}
     }
     if(connected != true){fprintf(stderr, "Connecting socket failed"); exit(0);}
+
+        free(head);
 
         char requestBuffer[200];
         int req = snprintf(requestBuffer, sizeof(requestBuffer), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", domainLink.path, domainLink.domain);
@@ -295,6 +297,7 @@ int inititateTCP(struct IpNode* ipList, struct myargs domainLink)
         fprintf(stdout, "Connection Successful, now intepreting http get:\n");
         ArrayListBuf *responseStruct = getResponseStruct(sockfd);
         int code = parseResponseStruct(responseStruct);
+        ArrayListBuf_free(responseStruct);
         close(sockfd);
         return code; 
     }
@@ -355,6 +358,8 @@ int main(int argc, char** argv) {
     {
         printf("HTTP request not OK. HTTP Response code: %d\n", result);
     }
+
+
 
     return 0;
     
